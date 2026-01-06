@@ -1,0 +1,5 @@
+{
+  "artifactType":  "ARTIFACT_TYPE_OTHER",
+  "summary":  "Documentation covering security aspects, specifically the account generation process and credential handling. It explains the interaction with external services (Mail.gw, Gigya) and local data privacy.",
+  "updatedAt":  "2026-01-06T13:57:18.661010500Z"
+}

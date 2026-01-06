@@ -1,0 +1,5 @@
+{
+  "artifactType":  "ARTIFACT_TYPE_OTHER",
+  "summary":  "Main README for the exported source code bundle. It serves as the entry point for developers, providing a high-level project overview, quick start instructions, and an index of links to the detailed sub-documentation files located in the `docs/` directory.",
+  "updatedAt":  "2026-01-06T13:56:09.652265400Z"
+}

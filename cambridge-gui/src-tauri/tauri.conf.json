@@ -1,0 +1,41 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "cambridge-gui",
+  "version": "0.1.0",
+  "identifier": "com.cambridge.fast",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "CambridgeGUI",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "visible": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": false,
+        "additionalBrowserArgs": "--no-proxy-server"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: filesystem: customprotocol: ipc: http://ipc.localhost; frame-src 'self' blob: data: filesystem: ; child-src 'self' blob: data: filesystem: ; img-src 'self' blob: data: filesystem: https:; connect-src 'self' ipc: http://ipc.localhost blob: data: filesystem: http://*:* https://*:*;"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

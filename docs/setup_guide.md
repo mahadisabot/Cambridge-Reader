@@ -1,0 +1,47 @@
+# Setup & Build Guide
+
+## Prerequisites
+To build this project from source, you need:
+1.  **Rust**: [Install Rustup](https://rustup.rs/) (stable channel).
+2.  **Node.js**: v18 or higher (LTS recommended).
+3.  **Python**: 3.9+ (Optional, only for the Installer Bundler).
+4.  **Inno Setup 6**: (Optional, only if generating the final `.exe`).
+
+## 💻 Development Workflow
+
+### 1. Install Dependencies
+```bash
+cd cambridge-gui
+npm install
+```
+
+### 2. Run Locally
+This starts the Vite frontend server and the Tauri Rust backend.
+```bash
+npm run tauri dev
+```
+*Hot Reloading is active for both Frontend (Instant) and Backend (Recompiles on save).*
+
+## 📦 Creating the Production Installer
+
+### The Easy Way (`bundle_installer.py`)
+We have a unified script that handles the entire pipeline:
+1.  Downloads the latest `ReadestSetup.exe`.
+2.  Builds the Tauri App (Release Mode).
+3.  Generates an Inno Setup Script (`suite_setup.iss`).
+4.  Compiles the final `CambridgeSetup_v1.exe`.
+
+**Usage:**
+```bash
+# In the project root
+python bundle_installer.py
+```
+*Output will be in `dist_suite/Output/`.*
+
+### Manual Build (Tauri Only)
+If you just want the app executable/msi without the Readest bundle:
+```bash
+cd cambridge-gui
+npm run tauri build
+```
+*Output in `src-tauri/target/release/bundle/nsis/`.*

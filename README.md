@@ -1,0 +1,41 @@
+# Cambridge Downloader v2.0 - Source Code
+
+Welcome to the source code for **Cambridge Downloader v2.0**, a high-performance desktop application for accessing Cambridge Elevate/Go resources. This project is built with **Tauri v2** (Rust + React).
+
+## 📚 Documentation Index
+This project contains detailed documentation to help you understand, build, and contribute.
+
+- **[Architecture & Tech Stack](docs/architecture.md)**: How the frontend and backend talk, state management, and core design patterns.
+- **[Setup & Build Guide](docs/setup_guide.md)**: How to install dependencies (Rust, Node) and compile the app.
+- **[Feature Deep Dive](docs/features.md)**: Explanations of "Instant Startup", "Optimistic Auth", and the caching system.
+- **[Security & Authentication](docs/security.md)**: Details on the auto-account generation (Mail.gw + Gigya) and local encryption.
+
+## 🚀 Quick Start
+Prerequisites: Node.js (v18+), Rust (latest stable).
+
+```bash
+# 1. Install Dependencies
+cd cambridge-gui
+npm install
+
+# 2. Run in Development Mode
+npm run tauri dev
+```
+
+## 📦 Building the Installer
+We use a custom Python script to bundle the app with **Readest** (ePub reader) and create a unified setup file.
+
+```bash
+# Builds the app and generates 'dist_suite/Output/CambridgeSetup_v1.exe'
+python bundle_installer.py
+```
+
+## 📂 Project Structure
+- `cambridge-gui/` - The main Tauri application.
+    - `src/` - React Frontend (UI, Components, State).
+    - `src-tauri/` - Rust Backend (API logic, File IO, System Commands).
+- `cambridge_downloader_rs/` - Shared Rust library for Cambridge API interactions.
+- `bundle_installer.py` - CI/CD script for generating the final installer.
+
+---
+*Generated for public release.*

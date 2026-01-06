@@ -1,0 +1,27 @@
+[package]
+name = "cambridge_downloader_rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+reqwest = { version = "0.11", default-features = false, features = ["json", "cookies", "blocking", "rustls-tls", "multipart", "stream"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+zip = "0.6"
+quick-xml = { version = "0.31", features = ["serialize"] }
+futures = "0.3"
+url = "2"
+clap = { version = "4", features = ["derive"] }
+indicatif = "0.17"
+walkdir = "2"
+bytes = "1"
+directories = "5.0"
+image = { version = "0.25.2", features = ["jpeg", "png"], optional = true }
+rand = "0.8"
+
+[features]
+default = []
+
+

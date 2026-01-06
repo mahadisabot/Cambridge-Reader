@@ -1,0 +1,45 @@
+# Architecture & Technical Stack
+
+## Overview
+Cambridge Downloader v2 is a hybrid desktop application built using the [Tauri](https://tauri.app) framework. It combines a lightweight web frontend (React) with a performant system backend (Rust).
+
+## 🛠 Tech Stack
+
+### Frontend (User Interface)
+- **Framework**: React 18
+- **Language**: TypeScript
+- **Build Tool**: Vite
+- **Styling**: Tailwind CSS + Framer Motion (Animations)
+- **State Management**: React Context + LocalStorage Persistence
+
+### Backend (System Core)
+- **Runtime**: Tauri v2 (Rust)
+- **HTTP Client**: `reqwest` (with Cookie Store for session persistence)
+- **Concurrency**: `tokio` (Async runtime)
+- **JSON Parsing**: `serde_json`
+
+## 🏗 Core Design Patterns
+
+### 1. Optimistic Authentication ("Instant Startup")
+To eliminate the 8-10 second cold boot time typical of Cambridge servers:
+1.  **Frontend**: Checks `localStorage.getItem('session_active')`. If true, it renders the Dashboard *immediately* (0ms delay).
+2.  **Background**: Rust asynchronously validates the session via [restore_session](file:///C:/Users/Breeze/.gemini/antigravity/brain/2884cc03-467c-4776-84fa-5822ea174fb9/cambridge-gui/src-tauri/src/commands.rs#84-108).
+3.  **Correction**: If validation fails (e.g., session expired), the frontend is signaled to log out.
+
+### 2. Deterministic Caching
+Images are cached to disk to prevent re-downloading on every launch.
+- **Old Strategy**: Hashed URLs (Failed because Cambridge URLs expire/rotate).
+- **New Strategy**: ID-Based. `covers/{book_id}.jpg`.
+    - [CoverCacheContext.tsx](file:///C:/Users/Breeze/.gemini/antigravity/brain/2884cc03-467c-4776-84fa-5822ea174fb9/cambridge-gui/src/components/CoverCacheContext.tsx): Manages the frontend memory cache and asks Rust to fetch missing covers.
+    - [commands.rs](file:///C:/Users/Breeze/.gemini/antigravity/brain/2884cc03-467c-4776-84fa-5822ea174fb9/cambridge-gui/src-tauri/src/commands.rs): Downloads bytes and writes to the AppCache directory.
+
+### 3. The "App Shell" Model
+We treat the [index.html](file:///C:/Users/Breeze/.gemini/antigravity/brain/2884cc03-467c-4776-84fa-5822ea174fb9/cambridge-gui/index.html) as a persistent shell.
+- **Login.tsx**: Handles ephemeral identity generation.
+- **Dashboard.tsx**: Handles long-running download tasks and library management.
+- **TitleBar.tsx**: Custom window controls overlaying the entire app (frameless window).
+
+## 📂 Key Source Files
+- [src-tauri/src/commands.rs](file:///C:/Users/Breeze/.gemini/antigravity/brain/2884cc03-467c-4776-84fa-5822ea174fb9/cambridge-gui/src-tauri/src/commands.rs): The main API bridge. All `invoke('cmd')` calls land here.
+- [cambridge_downloader_rs/](file:///C:/Users/Breeze/.gemini/antigravity/brain/2884cc03-467c-4776-84fa-5822ea174fb9/cambridge_downloader_rs): A shared Rust library that encapsulates the Cambridge API logic (Login, Search, Download).
+- [src/components/ThemeContext.tsx](file:///C:/Users/Breeze/.gemini/antigravity/brain/2884cc03-467c-4776-84fa-5822ea174fb9/cambridge-gui/src/components/ThemeContext.tsx): Handles dynamic theming and randomization.

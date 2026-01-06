@@ -1,0 +1,6 @@
+downloaded_books/
+node_modules/
+target/
+dist/
+.DS_Store
+*.log

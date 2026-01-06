@@ -1,0 +1,23 @@
+# Security & Authentication Details
+
+## Auto-Account Generation (Internals)
+The "Generate Account" feature relies on two external services interacting in a specific sequence.
+
+### 1. Email Provisioning (`mail.gw`)
+- **Service**: We use the `mail.gw` API (formerly `mail.tm`) to create disposable email addresses.
+- **Privacy**: We generate a random password for the mail account. We do not store or read emails other than the verification code.
+- **Token**: The API token for `mail.gw` is kept in memory during the generation process and discarded after.
+
+### 2. Gigya (Cambridge Identity)
+Cambridge uses SAP Gigya for identity management. The generation flow mimics a legitimate user:
+1.  **InitRegistration**: We call `accounts.initRegistration` to get a `regToken`.
+2.  **Registration**: We post the new email/password + profile data to `accounts.register`.
+3.  **Verification**: We trigger a login (`accounts.login`). If the account is "Pending Verification", we force a code resend (`accounts.otp.sendCode`).
+4.  **Extraction**: We poll the email inbox for the verification link/code.
+
+**Note**: This process is sensitive to API changes. If Cambridge changes their Gigya flow, [commands.rs](file:///C:/Users/Breeze/.gemini/antigravity/brain/2884cc03-467c-4776-84fa-5822ea174fb9/cambridge-gui/src-tauri/src/commands.rs) (specifically [create_account](file:///C:/Users/Breeze/.gemini/antigravity/brain/2884cc03-467c-4776-84fa-5822ea174fb9/cambridge-gui/src-tauri/src/commands.rs#240-464)) will need updates.
+
+## 🔐 Local Data
+- **Session Tokens**: Stored in the Rust Backend's `reqwest` cookie store (in-memory or encrypted on disk depending on OS).
+- **Credentials**: The app does NOT save the generated email/password to disk. It is only held in React state and verified via clipboard copy.
+- **Privacy**: No telemetry is sent to us. The app talks *only* to Cambridge, Mail.gw, and GitHub (for updates).

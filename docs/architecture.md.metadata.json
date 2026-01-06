@@ -1,0 +1,5 @@
+{
+  "artifactType":  "ARTIFACT_TYPE_OTHER",
+  "summary":  "Documentation detailing the technical architecture of the Cambridge Downloader. It covers the stack (Tauri, React, Rust), the Frontend-Backend communication model, state management (Persistent LocalStorage), and the file structure.",
+  "updatedAt":  "2026-01-06T13:57:06.759181100Z"
+}

@@ -140,7 +140,6 @@ async fn perform_reauth(app: &AppHandle, state: &State<'_, AppState>) -> Result<
 }
 
 #[tauri::command]
-#[tauri::command]
 pub async fn copy_to_clipboard(text: String) -> Result<(), String> {
     // Determine the shell based on the operating system
     #[cfg(target_os = "windows")]

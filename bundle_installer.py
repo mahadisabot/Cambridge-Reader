@@ -15,6 +15,15 @@ def step(msg):
     print(f"\n[+] {msg}")
 
 def download_latest_readest():
+    # CUSTOM OVERRIDE: Check for specific user file first
+    custom_path = Path(r"C:\Users\Breeze\Documents\Readest_0.9.96_x64-setup(1).exe")
+    if custom_path.exists():
+        step(f"Using Custom Readest Installer from {custom_path}")
+        # Copy to dist so Inno can find it
+        dest_path = DIST_DIR / "ReadestSetup.exe"
+        shutil.copy2(custom_path, dest_path)
+        return dest_path
+
     step(f"Fetching latest Readest release from {READEST_REPO}...")
     api_url = f"https://api.github.com/repos/{READEST_REPO}/releases/latest"
     
@@ -96,7 +105,7 @@ OutputBaseFilename=CambridgeSetup_v1
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
 Uninstallable=no
 InfoBeforeFile=
 

@@ -44,7 +44,8 @@ export default function Login({ onLogin }: LoginProps) {
 
             // 3. Success Feedback & Transition
             try {
-                await navigator.clipboard.writeText(`Email: ${creds[0]}\nPassword: ${creds[1]}`);
+                // await navigator.clipboard.writeText(`Email: ${creds[0]}\nPassword: ${creds[1]}`);
+                await invoke("copy_to_clipboard", { text: `Email: ${creds[0]}\nPassword: ${creds[1]}` });
             } catch (clipboardErr) {
                 console.warn("Clipboard write failed (likely permission denied), continuing login...", clipboardErr);
             }

@@ -140,6 +140,34 @@ async fn perform_reauth(app: &AppHandle, state: &State<'_, AppState>) -> Result<
 }
 
 #[tauri::command]
+#[tauri::command]
+pub async fn copy_to_clipboard(text: String) -> Result<(), String> {
+    // Determine the shell based on the operating system
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command as StdCommand;
+        use std::os::windows::process::CommandExt;
+        
+        // Escape check: Use Base64 or simple escaping to avoid injection/breakage?
+        // Simple Set-Clipboard is robust.
+        // We use powershell -NoProfile -Command "Set-Clipboard -Value '...'"
+        // But quotes are tricky.
+        // Better: Echo to pipe? "echo 'text' | Set-Clipboard"
+        // Let's rely on tauri::api?? No, gone in v2.
+        
+        let status = StdCommand::new("powershell")
+            .args(["-NoProfile", "-Command", "Set-Clipboard", "-Value", &format!("\"{}\"", text.replace("\"", "`\""))]) // Escape double quotes for PS
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .status()
+            .map_err(|e| e.to_string())?;
+
+         if !status.success() {
+            return Err("Clipboard command failed".to_string());
+        }
+    }
+    Ok(())
+}
+
 pub async fn refresh_session(
     app: AppHandle,
     state: State<'_, AppState>

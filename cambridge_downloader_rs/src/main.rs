@@ -199,7 +199,10 @@ async fn main() -> anyhow::Result<()> {
                 let mut all_tids = std::collections::HashSet::new();
                 
                 for k in &keywords {
-                    if let Ok(items) = client.search_trials(k, 1).await {
+                    let k_trimmed = k.trim();
+                    if k_trimmed.is_empty() { continue; }
+                    
+                    if let Ok(items) = client.search_trials(k_trimmed, 1).await {
                         for item in &items {
                             if let Some(t) = item["trial_id"].as_i64() { all_tids.insert(t); }
                             else if let Some(t) = item["trial_id"].as_str() { if let Ok(n) = t.parse::<i64>() { all_tids.insert(n); } }

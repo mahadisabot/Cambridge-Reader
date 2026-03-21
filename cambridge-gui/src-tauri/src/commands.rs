@@ -637,12 +637,14 @@ pub async fn search_books(app: AppHandle, query: String, page: Option<u32>, stat
         for word in keywords {
              let sem = semaphore.clone();
              let cli = client_clone.clone(); 
+             let word_trimmed = word.trim().to_string();
+             if word_trimmed.is_empty() { continue; }
              
              tasks.push(tokio::spawn(async move {
                  let _permit = sem.acquire().await;
-                 match cli.search_trials(&word, 1).await {
+                 match cli.search_trials(&word_trimmed, 1).await {
                      Ok(items) => {
-                         println!("Scrape '{}': Found {}", word, items.len());
+                         println!("Scrape '{}' (trimmed): Found {}", word_trimmed, items.len());
                          Some(items)
                      },
                      Err(e) => {

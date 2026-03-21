@@ -594,7 +594,35 @@ pub async fn search_books(app: AppHandle, query: String, page: Option<u32>, stat
              let content = std::fs::read_to_string(keywords_path).unwrap_or_default();
              serde_json::from_str::<Vec<String>>(&content).unwrap_or_else(|_| vec!["English".to_string(), "Science".to_string()])
         } else {
-             vec!["English".into(), "Math".into(), "Science".into(), "History".into()]
+             vec![
+                "Accountancy","Agriculture","Afrikaans","Arabic","Art & Design","Arts","Australian Curriculum",
+                "Basic Science & Technology","Biology","Business Management","Business Studies","Business, Economics, and Legal",
+                "Career Technology","Chemistry","Child Development","Chinese as a Second Language","Chinese language and literature",
+                "Civic Education","Classics","Climate Education","Coding & Robotics","Combined Science","Commerce",
+                "Computer Science","Computing","Creative and Technology Studies","Creative Arts","Creative iMedia",
+                "Development Studies","Early US History","Early years","Earth and Environmental Sciences",
+                "Economic and Management Sciences","Economics","Ekonomiese en Bestuurwetenskappe","EMS/EBW",
+                "Engineering","English","English (Shakespeare)","English as a Second Language","English as an Additional Language",
+                "English First Additional Language","English Language","English Language and Literature","English Literature",
+                "Enterprise and Marketing","Entrepreneurship","Environmental Management","Environmental Studies",
+                "Essential Computing","Essential Creative Arts","Essential French","Essential Mathematics",
+                "Essential Science","Essential History","Essential Learning and Literacy","Essential Our World and Our People",
+                "Fisiese Wetenskappe","French","Geography","German","Global Perspectives","Health & PE",
+                "Health and Social Care","History","Homework","Hospitality","Humanities","ICT",
+                "IGCSE Afrikaans","Information Technology","International Education","IsiNdebele","IsiXhosa Home Language",
+                "IsiZulu Home Language","IWB Software","Kindergarten","Latin","Latin and other Languages","Let's explore",
+                "Lewensvaardighede","Lewenswetenskappe","Life Sciences","Life Skills","Literacy","Mandarin",
+                "Marine Science","Mathematical Literacy","Mathematics","Media","Media Studies","Modern Foreign Languages",
+                "Modern US History","Natural Sciences and Technology","Natuurwetenskappe","Nigeria ECD","Numeracy",
+                "Outdoor and Environmental Studies","Philosophy and Critical Thinking","Physical Education","Physical Sciences",
+                "Physics","Primary Phonics","Professional Development","Psychology","Reading Masterclass","Rekeningkunde",
+                "Religion","Science","Sciences","Sepedi Home Language","Sesotho","Setswana","Siswati",
+                "Smart Start Kindergarten","Smart Start Nursery","Social sciences","Social Studies","Sociology","Soft Skills",
+                "Sosiale Wetenskappe","Spanish","Special Needs","Sport","Statistics","Study & Master Covid-19 Worksheets",
+                "Study Guides","Teacher Guides","Teaching Practice and Professional Development","Technology",
+                "Travel and Tourism","Tshivenda","US History","Visual Communication","Vocational","Well being",
+                "Wiskunde","Wiskunde Geletterdheid","Xitsonga Home Language"
+             ].into_iter().map(|s| s.to_string()).collect()
         };
 
         // Limit concurrent tasks to avoid rate limits

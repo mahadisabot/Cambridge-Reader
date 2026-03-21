@@ -20,6 +20,7 @@ bytes = "1"
 directories = "5.0"
 image = { version = "0.25.2", features = ["jpeg", "png"], optional = true }
 rand = "0.8"
+regex = "1"
 
 [features]
 default = []

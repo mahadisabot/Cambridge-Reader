@@ -119,6 +119,13 @@ impl DownloadManager {
         // Wait for Cover Injection before Zipping (as it modifies OPF)
         cover_task.await?;
         
+        // 3.5 Apply Structural Fixes (MathJax / Custom Fonts)
+        self.send_progress(crate::ProgressEvent::PhaseChanged { phase: "Applying EPUB Fixes".to_string() }).await;
+        if let Err(e) = self.apply_epub_fixes(&temp_dir, &opf_rel_path).await {
+            eprintln!("Warning: Failed to apply structural fixes: {}", e);
+            self.send_progress(crate::ProgressEvent::Log { message: format!("Fix warning: {}", e) }).await;
+        }
+        
         // 4. Create EPUB (Blocking CPU work)
         // Offload to blocking thread to avoid freezing async runtime
         self.send_progress(crate::ProgressEvent::PhaseChanged { phase: "Zipping EPUB (CPU Bound)".to_string() }).await;
@@ -427,15 +434,170 @@ impl DownloadManager {
         
         // 1. Inject Manifest Item
         if !opf_content.contains("cover.jpg") {
-            let item_tag = format!(r#"<item id="cover-image-injected" href="{}" media-type="image/jpeg"/>"#, cover_filename);
+            // Include `properties="cover-image"` for strict EPUB3 readers like Foliate on Linux
+            let item_tag = format!(r#"<item id="cover-image-injected" href="{}" media-type="image/jpeg" properties="cover-image"/>"#, cover_filename);
             // Insert before closing manifest
             opf_content = opf_content.replace("</manifest>", &format!("{}\n    </manifest>", item_tag));
             
-            // 2. Inject Metadata
+            // 2. Inject Metadata (EPUB2 fallback)
             let meta_tag = r#"<meta name="cover" content="cover-image-injected"/>"#;
             opf_content = opf_content.replace("</metadata>", &format!("{}\n    </metadata>", meta_tag));
             
             fs::write(&opf_path, opf_content)?;
+        }
+        
+        Ok(())
+    }
+
+    async fn apply_epub_fixes(&self, temp_dir: &Path, opf_rel_path: &str) -> Result<()> {
+        let opf_path = temp_dir.join(opf_rel_path);
+        let mut opf_content = fs::read_to_string(&opf_path).unwrap_or_default();
+        
+        // 1. Find all assets
+        let mut mathjax_fonts = Vec::new();
+        let mut xhtml_files = Vec::new();
+        let mut css_files = Vec::new();
+        let mut custom_fonts = Vec::new();
+        
+        for entry in walkdir::WalkDir::new(temp_dir).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if !path.is_file() { continue; }
+            
+            let name = path.strip_prefix(temp_dir).unwrap_or(path).to_string_lossy().replace("\\", "/");
+            let name_lower = name.to_lowercase();
+            
+            if name_lower.contains("mathjax/fonts/") && 
+               (name_lower.ends_with(".woff") || name_lower.ends_with(".otf") || name_lower.ends_with(".ttf") || name_lower.ends_with(".eot")) {
+                mathjax_fonts.push(name.clone());
+            }
+            if name_lower.starts_with("oebps/fonts/") && 
+               (name_lower.ends_with(".woff") || name_lower.ends_with(".otf") || name_lower.ends_with(".ttf")) {
+                custom_fonts.push(name.clone());
+            }
+            if name_lower.ends_with(".xhtml") || name_lower.ends_with(".html") {
+                xhtml_files.push(path.to_path_buf());
+            }
+            if name_lower.ends_with(".css") && !name_lower.contains("mathjax") {
+                 if name_lower.contains("stylesheet.css") || name_lower.contains("style.css") {
+                     css_files.insert(0, path.to_path_buf());
+                 } else {
+                     css_files.push(path.to_path_buf());
+                 }
+            }
+        }
+        
+        let has_mathjax = !mathjax_fonts.is_empty();
+        
+        // 2. MathJax OPF Injection
+        if has_mathjax && !opf_content.to_lowercase().contains("mathjax/fonts") && opf_content.contains("</manifest>") {
+            self.send_progress(crate::ProgressEvent::Log { message: format!("Injecting {} MathJax OPF entities", mathjax_fonts.len()) }).await;
+            
+            let opf_dir = opf_rel_path.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+            let mut injections = String::new();
+            
+            for (i, mfont) in mathjax_fonts.iter().enumerate() {
+                let rel_path = if !opf_dir.is_empty() && mfont.starts_with(&format!("{}/", opf_dir)) {
+                    &mfont[opf_dir.len() + 1..]
+                } else {
+                    mfont
+                };
+                
+                let ext = mfont.rsplit_once('.').map(|(_, e)| e.to_lowercase()).unwrap_or_default();
+                let mt = match ext.as_str() {
+                    "woff" => "application/font-woff",
+                    "otf" | "ttf" => "application/vnd.ms-opentype",
+                    "eot" => "application/vnd.ms-fontobject",
+                    _ => "application/octet-stream"
+                };
+                
+                injections.push_str(&format!("    <item id=\"mjx-font-{}\" href=\"{}\" media-type=\"{}\" />\n", i, rel_path, mt));
+            }
+            
+            opf_content = opf_content.replace("</manifest>", &format!("{}\n  </manifest>", injections));
+            fs::write(&opf_path, &opf_content)?;
+        }
+        
+        // 3. Strip ?rev= from XHTML/HTML if MathJax present
+        if has_mathjax {
+            self.send_progress(crate::ProgressEvent::Log { message: "Stripping MathJax ?rev= parameters".to_string() }).await;
+            for xhtml in xhtml_files {
+                if let Ok(content) = fs::read_to_string(&xhtml) {
+                    if content.contains("?rev=") {
+                        let mut new_content = content;
+                        let markers = ["?rev=2.7.2", "?rev=2.7.1", "?rev=2.7.0"];
+                        for m in markers {
+                            new_content = new_content.replace(&format!("{}'", m), "'");
+                            new_content = new_content.replace(&format!("{}\"", m), "\"");
+                        }
+                        fs::write(xhtml, new_content)?;
+                    }
+                }
+            }
+        }
+        
+        // 4. CSS Injection
+        if let Some(css_path) = css_files.first() {
+            if let Ok(mut content) = fs::read_to_string(css_path) {
+                if !content.contains("Cambridge Reader op_stylesheet") {
+                    self.send_progress(crate::ProgressEvent::Log { message: "Applying CSS Reader fixes".to_string() }).await;
+                    
+                    let mut injection = String::from("\n/* === Cambridge Reader op_stylesheet fixes === */\n");
+                    
+                    if has_mathjax {
+                        injection.push_str(r#"
+.MathJax, .MathJax * {
+  font-kerning: none !important;
+  font-variant-ligatures: none !important;
+  font-feature-settings: "kern" 0, "liga" 0 !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  text-rendering: geometricPrecision !important;
+  -webkit-text-size-adjust: none !important;
+}
+
+.MathJax {
+  line-height: normal !important;
+  font-size: 100% !important;
+  padding-top: 0.1em !important;
+  padding-bottom: 0.1em !important;
+}
+
+.MathJax .msub, .MathJax .msubsup, .MathJax .msup {
+  letter-spacing: 0.01em !important;
+}
+"#);
+                    }
+                    
+                    if !custom_fonts.is_empty() {
+                         injection.push_str("\n/* Custom Fonts Mapping */\n");
+                         for cfont in custom_fonts {
+                             let filename = cfont.rsplit_once('/').map(|(_, f)| f).unwrap_or(&cfont);
+                             let (name, style, weight) = match filename.to_lowercase().as_str() {
+                                 "arial.ttf" => ("Arial", "normal", "normal"),
+                                 "arialbd.ttf" => ("Arial", "normal", "bold"),
+                                 "ariali.ttf" => ("Arial", "italic", "normal"),
+                                 "arialbi.ttf" => ("Arial", "italic", "bold"),
+                                 "minionpro-regular.otf" => ("MinionPro", "normal", "normal"),
+                                 "minionpro-it.otf" => ("MinionPro", "italic", "normal"),
+                                 "minionpro-bold.otf" => ("MinionPro", "normal", "bold"),
+                                 "minionpro-boldit.otf" => ("MinionPro", "italic", "bold"),
+                                 _ => ("", "normal", "normal")
+                             };
+                             
+                             if !name.is_empty() {
+                                 let rel_path = format!("../fonts/{}", filename);
+                                 injection.push_str(&format!(
+                                    "@font-face {{ font-family: \"{}\"; src: url(\"{}\"); font-style: {}; font-weight: {}; }}\n",
+                                    name, rel_path, style, weight
+                                 ));
+                             }
+                         }
+                    }
+                    
+                    content = format!("{}\n{}", injection, content);
+                    fs::write(css_path, content)?;
+                }
+            }
         }
         
         Ok(())

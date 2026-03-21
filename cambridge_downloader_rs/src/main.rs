@@ -1,4 +1,3 @@
-use clap::{Parser, Subcommand};
 use cambridge_downloader_rs::api::CambridgeClient;
 use cambridge_downloader_rs::downloader::DownloadManager;
 use cambridge_downloader_rs::mail_tm::MailTmClient;
@@ -6,44 +5,14 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 use futures::stream::StreamExt;
 use rand::Rng;
+use std::io::{self, Write};
 
-#[derive(Parser)]
-#[command(name = "Cambridge Reader Downloader")]
-#[command(about = "CLI for downloading and fixing Cambridge EPUBs", long_about = None)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// Auto-generates an account using MailTm
-    Register,
-    /// Search for trials (requires email/password)
-    Search {
-        #[arg(short, long)]
-        email: String,
-        #[arg(short, long)]
-        password: String,
-        #[arg(short, long, default_value = "*")]
-        query: String,
-    },
-    /// Claims all possible books parallelized
-    ClaimAll {
-        #[arg(short, long)]
-        email: String,
-        #[arg(short, long)]
-        password: String,
-    },
-    /// Downloads all claimed books parallelized
-    DownloadAll {
-        #[arg(short, long)]
-        email: String,
-        #[arg(short, long)]
-        password: String,
-        #[arg(short, long)]
-        output_dir: String,
-    },
+fn prompt(msg: &str) -> String {
+    print!("{}", msg);
+    io::stdout().flush().ok();
+    let mut buf = String::new();
+    io::stdin().read_line(&mut buf).ok();
+    buf.trim().to_string()
 }
 
 fn random_string(len: usize) -> String {
@@ -54,8 +23,8 @@ fn random_string(len: usize) -> String {
         .collect()
 }
 
-async fn do_register() -> anyhow::Result<()> {
-    println!("Initializing Auto-Registration...");
+async fn do_register() -> anyhow::Result<(String, String)> {
+    println!("\n🔑 Auto-Generating Account...");
     let mail_client = MailTmClient::new();
     let domains = mail_client.get_domains().await?;
     if domains.is_empty() { anyhow::bail!("No mail domains available"); }
@@ -65,21 +34,19 @@ async fn do_register() -> anyhow::Result<()> {
     let address = format!("{}{}", random_string(8).to_lowercase(), full_domain);
     let shared_password = format!("{}!A1", random_string(10));
     
-    println!("1. Created Mail account: {}", address);
+    println!("  1. Created temp email: {}", address);
     let account = mail_client.create_account(&address, &shared_password).await?;
     
     let api_key = "3_YZ2Ps8zW-VCK3H5YrTUOsnjUBbwPk6U20kdzNbdyujkuhavooF4bJ9lMF_WNAi0C";
     let gigya_domain = "https://accounts.eu1.gigya.com";
     let client = reqwest::Client::builder().cookie_store(true).build()?;
     
-    println!("2. Initializing Gigya...");
+    println!("  2. Registering on Cambridge...");
     let init_res = client.get(format!("{}/accounts.initRegistration", gigya_domain))
-        .query(&[("apiKey", api_key)])
-        .send().await?;
+        .query(&[("apiKey", api_key)]).send().await?;
     let init_json: serde_json::Value = init_res.json().await?;
     let reg_token = init_json["regToken"].as_str().unwrap().to_string();
     
-    println!("3. Registering...");
     let profile_json = serde_json::json!({ "firstName": "Bot", "lastName": random_string(4), "country": "GB" }).to_string();
     let preferences_json = serde_json::json!({ "terms": { "go": { "isConsentGranted": true } } }).to_string();
     let data_json = serde_json::json!({ "eduelt": { "instituteRole": [{"role": "teacher"}] } }).to_string();
@@ -91,13 +58,12 @@ async fn do_register() -> anyhow::Result<()> {
             ("regSource", "CambridgeGO"), ("finalizeRegistration", "true"), ("include", "profile,preferences,data")
         ]).send().await?;
     
-    println!("4. Triggering Login Verification...");
+    println!("  3. Verifying email...");
     let login_res = client.post(format!("{}/accounts.login", gigya_domain))
         .form(&[
             ("apiKey", api_key), ("loginID", &account.address), ("password", &shared_password),
             ("include", "profile,data,preferences,sessionInfo,id_token"), ("loginMode", "standard")
         ]).send().await?;
-        
     let login_text = login_res.text().await?;
     let current_reg_token = serde_json::from_str::<serde_json::Value>(&login_text).unwrap()["regToken"].as_str().unwrap_or(&reg_token).to_string();
     
@@ -111,9 +77,11 @@ async fn do_register() -> anyhow::Result<()> {
         }
     }
     
-    println!("5. Polling for OTP...");
+    print!("  4. Waiting for OTP");
+    io::stdout().flush().ok();
     let mut code = String::new();
     for _ in 0..30 {
+        print!("."); io::stdout().flush().ok();
         if let Ok(msgs) = mail_client.get_messages(&account.token).await {
             if let Some(m) = msgs.first() {
                 let re = regex::Regex::new(r"(\d{6})").unwrap();
@@ -125,108 +93,211 @@ async fn do_register() -> anyhow::Result<()> {
         }
         tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
     }
+    println!();
     if code.is_empty() { anyhow::bail!("OTP timeout"); }
-    println!("   OTP received: {}", code);
+    println!("  5. OTP received: {}", code);
     
     let v_tok = if !v_token.is_empty() { &v_token } else { &current_reg_token };
     client.post(format!("{}/accounts.otp.update", gigya_domain))
         .form(&[("apiKey", api_key), ("vToken", v_tok), ("regToken", &current_reg_token), ("code", &code), ("source", "showScreenSet")])
         .send().await?;
-        
     client.post(format!("{}/accounts.finalizeRegistration", gigya_domain))
         .form(&[("apiKey", api_key), ("regToken", &current_reg_token), ("includeUserInfo", "true"), ("data", &data_json)])
         .send().await?;
-        
-    println!("--------------------------------------");
-    println!("✅ Account Created Successfully!");
-    println!("EMAIL:    {}", account.address);
-    println!("PASSWORD: {}", shared_password);
-    println!("--------------------------------------");
     
-    Ok(())
+    println!("  ✅ Account ready!");
+    Ok((account.address, shared_password))
 }
 
 async fn get_client(email: &str, pass: &str) -> anyhow::Result<CambridgeClient> {
     let mut client = CambridgeClient::new()?;
-    println!("Logging in to Elevate/Bookshelf...");
+    println!("  Logging in to Elevate...");
     client.login(email, pass).await?;
-    println!("Logging in to GO APIs...");
-    // Failure allowed for Go APIs if we only want download
+    println!("  Logging in to GO API...");
     let _ = client.login_go(email, pass).await;
     Ok(client)
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
+    println!("╔══════════════════════════════════════╗");
+    println!("║   Cambridge Reader Downloader CLI    ║");
+    println!("╚══════════════════════════════════════╝");
     
-    match cli.command {
-        Commands::Register => { do_register().await?; }
-        Commands::Search { email, password, query } => {
-            let client = get_client(&email, &password).await?;
-            let items = client.search_trials(&query, 1).await?;
-            for item in items {
-                println!("- \"{}\" [TID: {}]", item["name"].as_str().unwrap_or("?"), item["trial_id"]);
-            }
-        }
-        Commands::ClaimAll { email, password } => {
-            let client = Arc::new(get_client(&email, &password).await?);
-            println!("Finding all trials...");
-            let keywords = vec!["English", "Math", "Science", "History", "Physics", "Chemistry", "Biology"];
-            let mut all_tids = std::collections::HashSet::new();
-            
-            for k in keywords {
-                if let Ok(items) = client.search_trials(k, 1).await {
-                    for item in items {
-                        if let Some(t) = item["trial_id"].as_i64() { all_tids.insert(t); }
-                        else if let Some(t) = item["trial_id"].as_str() { if let Ok(n) = t.parse::<i64>() { all_tids.insert(n); } }
+    // --- Step 1: Download Location ---
+    let output_dir = prompt("\n📂 Download location [default: ./CambridgeBooks]: ");
+    let output_dir = if output_dir.is_empty() { "./CambridgeBooks".to_string() } else { output_dir };
+    std::fs::create_dir_all(&output_dir).ok();
+    println!("  → Saving to: {}", output_dir);
+    
+    // --- Step 2: Account ---
+    println!("\n👤 Account Setup:");
+    println!("  [1] Generate new account automatically");
+    println!("  [2] Use existing credentials");
+    let choice = prompt("  Choice [1/2]: ");
+    
+    let (email, password) = if choice == "2" {
+        let e = prompt("  Email: ");
+        let p = prompt("  Password: ");
+        (e, p)
+    } else {
+        do_register().await?
+    };
+    
+    println!("\n  EMAIL:    {}", email);
+    println!("  PASSWORD: {}", password);
+    
+    // --- Step 3: Login ---
+    println!("\n🔐 Authenticating...");
+    let client = get_client(&email, &password).await?;
+    let client = Arc::new(client);
+    
+    // --- Main Menu Loop ---
+    loop {
+        println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        println!("  [1] Claim ALL available trials (bulk)");
+        println!("  [2] Download ALL books from library (bulk)");
+        println!("  [3] Search & claim specific books");
+        println!("  [4] Download a specific book");
+        println!("  [5] Exit");
+        println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        let action = prompt("  Action: ");
+        
+        match action.as_str() {
+            "1" => {
+                // --- Claim All ---
+                println!("\n🔍 Scraping all available trials...");
+                let keywords = vec!["English", "Math", "Science", "History", "Physics", "Chemistry", "Biology",
+                                    "Geography", "Economics", "Computer", "Business", "Psychology", "Art"];
+                let mut all_tids = std::collections::HashSet::new();
+                
+                for k in &keywords {
+                    if let Ok(items) = client.search_trials(k, 1).await {
+                        for item in &items {
+                            if let Some(t) = item["trial_id"].as_i64() { all_tids.insert(t); }
+                            else if let Some(t) = item["trial_id"].as_str() { if let Ok(n) = t.parse::<i64>() { all_tids.insert(n); } }
+                        }
+                        print!("  {} ({}) ", k, items.len()); io::stdout().flush().ok();
                     }
                 }
-            }
-            
-            println!("Claiming {} trials concurrently...", all_tids.len());
-            let semaphore = Arc::new(Semaphore::new(10));
-            let stream = futures::stream::iter(all_tids).map(|tid| {
-                let client = client.clone();
-                let sem = semaphore.clone();
-                async move {
-                    let _p = sem.acquire().await;
-                    if let Err(e) = client.claim_trial(tid).await {
-                        eprintln!("Failed to claim {}: {}", tid, e);
-                    } else {
-                        println!("Claimed TID {}", tid);
+                println!("\n  Found {} unique trials. Claiming concurrently...", all_tids.len());
+                
+                let sem = Arc::new(Semaphore::new(10));
+                let client_c = client.clone();
+                let stream = futures::stream::iter(all_tids).map(move |tid| {
+                    let client = client_c.clone();
+                    let sem = sem.clone();
+                    async move {
+                        let _p = sem.acquire().await;
+                        match client.claim_trial(tid).await {
+                            Ok(_) => print!("✓"),
+                            Err(_) => print!("✗"),
+                        }
+                        io::stdout().flush().ok();
                     }
-                }
-            });
-            stream.buffer_unordered(10).collect::<Vec<()>>().await;
-            println!("Finished claiming.");
-        }
-        Commands::DownloadAll { email, password, output_dir } => {
-            let client = get_client(&email, &password).await?;
-            println!("Fetching bookshelf...");
-            let books = client.get_books().await?;
-            println!("Found {} books. Downloading concurrently...", books.len());
-            
-            let dm = DownloadManager::new(client, None);
-            let semaphore = Arc::new(Semaphore::new(4)); // Limit parallel book zipping
-            
-            let stream = futures::stream::iter(books).map(|book| {
-                let dm = dm.clone();
-                let sem = semaphore.clone();
+                });
+                stream.buffer_unordered(10).collect::<Vec<()>>().await;
+                println!("\n  ✅ Claiming complete!");
+            }
+            "2" => {
+                // --- Download All ---
+                println!("\n📚 Fetching your bookshelf...");
+                let books = client.get_books().await?;
+                println!("  Found {} books. Downloading with 4-way concurrency...\n", books.len());
+                
+                let dm = DownloadManager::new((*client).clone(), None);
+                let sem = Arc::new(Semaphore::new(4));
                 let out = output_dir.clone();
-                async move {
-                    let _p = sem.acquire().await;
-                    println!("Started: {}", book.title);
-                    if let Err(e) = dm.download_book(&book, &out).await {
-                        eprintln!("Error on {}: {}", book.title, e);
-                    } else {
-                        println!("Finished: {}", book.title);
+                
+                let stream = futures::stream::iter(books).map(|book| {
+                    let dm = dm.clone();
+                    let sem = sem.clone();
+                    let out = out.clone();
+                    async move {
+                        let _p = sem.acquire().await;
+                        println!("  ⬇ {}", book.title);
+                        match dm.download_book(&book, &out).await {
+                            Ok(_) => println!("  ✅ {}", book.title),
+                            Err(e) => eprintln!("  ❌ {}: {}", book.title, e),
+                        }
+                    }
+                });
+                stream.buffer_unordered(4).collect::<Vec<()>>().await;
+                println!("\n  📦 All downloads complete!");
+            }
+            "3" => {
+                // --- Search & Claim Specific ---
+                let query = prompt("\n🔎 Search query: ");
+                if query.is_empty() { continue; }
+                
+                let items = client.search_trials(&query, 1).await?;
+                if items.is_empty() {
+                    println!("  No results found.");
+                    continue;
+                }
+                
+                println!("\n  Results:");
+                let mut trial_ids: Vec<(i64, String)> = Vec::new();
+                for (i, item) in items.iter().enumerate() {
+                    let name = item["name"].as_str().unwrap_or("?");
+                    let tid = item["trial_id"].as_i64().unwrap_or(0);
+                    println!("  [{}] {} (TID: {})", i+1, name, tid);
+                    trial_ids.push((tid, name.to_string()));
+                }
+                
+                let sel = prompt("\n  Claim which? (number, 'all', or 'skip'): ");
+                if sel.to_lowercase() == "all" {
+                    for (tid, name) in &trial_ids {
+                        match client.claim_trial(*tid).await {
+                            Ok(_) => println!("  ✅ Claimed: {}", name),
+                            Err(e) => eprintln!("  ❌ {}: {}", name, e),
+                        }
+                    }
+                } else if sel != "skip" {
+                    if let Ok(idx) = sel.parse::<usize>() {
+                        if idx >= 1 && idx <= trial_ids.len() {
+                            let (tid, name) = &trial_ids[idx - 1];
+                            match client.claim_trial(*tid).await {
+                                Ok(_) => println!("  ✅ Claimed: {}", name),
+                                Err(e) => eprintln!("  ❌ {}: {}", name, e),
+                            }
+                        }
                     }
                 }
-            });
-            stream.buffer_unordered(4).collect::<Vec<()>>().await;
-            println!("All downloads complete.");
+            }
+            "4" => {
+                // --- Download Specific ---
+                println!("\n📚 Fetching your bookshelf...");
+                let books = client.get_books().await?;
+                if books.is_empty() {
+                    println!("  No books in your library. Claim some first!");
+                    continue;
+                }
+                
+                for (i, b) in books.iter().enumerate() {
+                    println!("  [{}] {}", i+1, b.title);
+                }
+                
+                let sel = prompt("\n  Download which? (number): ");
+                if let Ok(idx) = sel.parse::<usize>() {
+                    if idx >= 1 && idx <= books.len() {
+                        let book = &books[idx - 1];
+                        println!("  ⬇ Downloading: {}...", book.title);
+                        let dm = DownloadManager::new((*client).clone(), None);
+                        match dm.download_book(book, &output_dir).await {
+                            Ok(_) => println!("  ✅ Done: {}", book.title),
+                            Err(e) => eprintln!("  ❌ Error: {}", e),
+                        }
+                    }
+                }
+            }
+            "5" | "exit" | "quit" | "q" => {
+                println!("\n👋 Goodbye!");
+                break;
+            }
+            _ => println!("  Invalid choice."),
         }
     }
+    
     Ok(())
 }
